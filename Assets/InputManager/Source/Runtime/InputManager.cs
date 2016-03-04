@@ -304,7 +304,7 @@ namespace TeamUtility.IO
 		
 		private bool ScanJoystickButton()
 		{
-			for(int key = (int)KeyCode.JoystickButton0; key < (int)KeyCode.Joystick4Button19; key++)
+			for(int key = (int)KeyCode.Joystick1Button0; key < (int)KeyCode.Joystick4Button19; key++)
 			{
 				if(Input.GetKeyDown((KeyCode)key))
 				{
