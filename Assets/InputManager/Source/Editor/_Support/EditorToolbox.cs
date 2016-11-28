@@ -24,16 +24,58 @@ using UnityEngine;
 using UnityEditor;
 using System;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Collections;
 using TeamUtility.IO;
+using UnityInputConverter;
 
 namespace TeamUtilityEditor.IO.InputManager
 {
 	public static class EditorToolbox
 	{
 		private static string _snapshotFile;
+		private static string[] _axisNames;
+		private static string[] _joystickNames;
+
+		public static string[] GenerateJoystickAxisNames()
+		{
+			if(_axisNames == null || _axisNames.Length != AxisConfiguration.MaxJoystickAxes)
+			{
+				_axisNames = new string[AxisConfiguration.MaxJoystickAxes];
+				for(int i = 0; i < AxisConfiguration.MaxJoystickAxes; i++)
+				{
+					if(i == 0)
+						_axisNames[i] = "X";
+					else if(i == 1)
+						_axisNames[i] = "Y";
+					else if(i == 2)
+						_axisNames[i] = "3rd axis (Joysticks and Scrollwheel)";
+					else if(i == 21)
+						_axisNames[i] = "21st axis (Joysticks)";
+					else if(i == 22)
+						_axisNames[i] = "22nd axis (Joysticks)";
+					else if(i == 23)
+						_axisNames[i] = "23rd axis (Joysticks)";
+					else
+						_axisNames[i] = string.Format("{0}th axis (Joysticks)", i + 1);
+				}
+			}
+
+			return _axisNames;
+		}
+
+		public static string[] GenerateJoystickNames()
+		{
+			if(_joystickNames == null || _joystickNames.Length != AxisConfiguration.MaxJoysticks)
+			{
+				_joystickNames = new string[AxisConfiguration.MaxJoysticks];
+				for(int i = 0; i < AxisConfiguration.MaxJoysticks; i++)
+				{
+					_joystickNames[i] = string.Format("Joystick {0}", i + 1);
+				}
+			}
+
+			return _joystickNames;
+		}
 
 		public static bool CanLoadSnapshot()
 		{
@@ -51,7 +93,7 @@ namespace TeamUtilityEditor.IO.InputManager
 			{
 				_snapshotFile = Path.Combine(Application.temporaryCachePath, "input_config.xml");
 			}
-			
+
 			InputSaverXML inputSaver = new InputSaverXML(_snapshotFile);
 			inputSaver.Save(inputManager.GetSaveParameters());
 		}
@@ -67,46 +109,82 @@ namespace TeamUtilityEditor.IO.InputManager
 		
 		public static void ShowStartupWarning()
 		{
-			string key = string.Concat(PlayerSettings.productName, ".InputManager.StartupWarning");
+			string key = string.Concat(PlayerSettings.companyName, ".", PlayerSettings.productName, ".InputManager.StartupWarning");
 			
 			if(!EditorPrefs.GetBool(key, false))
 			{
-				string message = "In order to use InputManager you need to overwrite your project's input settings.\n\nDo you want to overwrite the input settings now?\nYou can always do it from the File menu.";
+				string message = "In order to use the InputManager plugin you need to overwrite your project's input settings. Your old input axes will be exported to a file which can be imported at a later time from the File menu.\n\nDo you want to overwrite the input settings now?\nYou can always do it later from the File menu.";
 				if(EditorUtility.DisplayDialog("Warning", message, "Yes", "No"))
 				{
-					OverwriteInputSettings();
+					if(OverwriteInputSettings())
+						EditorPrefs.SetBool(key, true);
 				}
-				EditorPrefs.SetBool(key, true);
 			}
 		}
 		
-		public static void OverwriteInputSettings()
+		public static bool OverwriteInputSettings()
 		{
-			TextAsset textAsset = Resources.Load(ResourcePaths.CUSTOM_PROJECT_SETTINGS) as TextAsset;
-			if(textAsset == null)
-			{
-				EditorUtility.DisplayDialog("Error", "Unable to load input settings from the Resources folder.", "OK");
-				return;
-			}
-			
 			int length = Application.dataPath.LastIndexOf('/');
 			string projectSettingsFolder = string.Concat(Application.dataPath.Substring(0, length), "/ProjectSettings");
+			string inputManagerPath = string.Concat(projectSettingsFolder, "/InputManager.asset");
+
 			if(!Directory.Exists(projectSettingsFolder))
 			{
-				Resources.UnloadAsset(textAsset);
 				EditorUtility.DisplayDialog("Error", "Unable to get the correct path to the ProjectSetting folder.", "OK");
-				return;
+				return false;
 			}
-			
-			string inputManagerPath = string.Concat(projectSettingsFolder, "/InputManager.asset");
-			File.Delete(inputManagerPath);
-			using(StreamWriter writer = File.CreateText(inputManagerPath))
+
+			if(!File.Exists(inputManagerPath))
 			{
-				writer.Write(textAsset.text);
+				EditorUtility.DisplayDialog("Error", "Unable to get the correct path to the InputManager file from the ProjectSettings folder.", "OK");
+				return false;
 			}
-			EditorUtility.DisplayDialog("Success", "The input settings have been successfully replaced.\nYou might need to minimize and restore Unity to reimport the new settings.", "OK");
-			
-			Resources.UnloadAsset(textAsset);
+
+			int option = EditorUtility.DisplayDialogComplex("Warning", "Do you want to export your old input settings?\n\nYour project needs to have text serialization enabled. If text serialization is not enabled press the Abort button.\n\nYou can resume this process after text serialization is enabled from the File menu.", "Yes", "No", "Abort");
+			string exportPath = null;
+
+			if(option == 0)
+			{
+				exportPath = EditorUtility.SaveFilePanel("Export old input axes", "", "unity_input_export", "xml");
+				if(string.IsNullOrEmpty(exportPath))
+				{
+					if(!EditorUtility.DisplayDialog("Warning", "You chose not to export your old input settings. They will be lost forever. Are you sure you want to continue?", "Yes", "No"))
+						return false;
+				}
+			}
+			else
+			{
+				if(option == 1)
+				{
+					if(!EditorUtility.DisplayDialog("Warning", "You chose not to export your old input settings. They will be lost forever. Are you sure you want to continue?", "Yes", "No"))
+						return false;
+				}
+				else
+				{
+					return false;
+				}
+			}
+
+			InputConverter inputConverter = new InputConverter();
+			if(!string.IsNullOrEmpty(exportPath))
+			{
+				try
+				{
+					inputConverter.ConvertUnityInputManager(inputManagerPath, exportPath);
+				}
+				catch(System.Exception ex)
+				{
+					Debug.LogException(ex);
+					if(!EditorUtility.DisplayDialog("Error", "Failed to export your old input settings. Do you want to continue? If you continue your old input settings will be lost forever.", "Yes", "No"))
+						return false;
+				}
+			}
+
+			inputConverter.GenerateDefaultUnityInputManager(inputManagerPath);
+
+			EditorUtility.DisplayDialog("Success", "The input settings have been successfully replaced.\n\nYou might need to minimize and restore Unity to reimport the new settings.", "OK");
+
+			return true;
 		}
 		
 		public static void KeyCodeField(ref string keyString, ref bool isEditing, string label, string controlName, KeyCode currentKey)

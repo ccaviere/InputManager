@@ -93,8 +93,8 @@ namespace TeamUtilityEditor.IO
 		private bool _editingAltNegativeKey = false;
 		private bool _tryedToFindInputManagerInScene = false;
 		private bool _isDisposed = false;
-		private string[] _axisOptions = new string[] { "X", "Y", "3rd(Scrollwheel)", "4th", "5th", "6th", "7th", "8th", "9th", "10th" };
-		private string[] _joystickOptions = new string[] { "Joystick 1", "Joystick 2", "Joystick 3", "Joystick 4" };
+		private string[] _axisOptions;
+		private string[] _joystickOptions;
 		
 		private const float _menuWidth = 100.0f;
 		private const float _minHierarchyPanelWidth = 150.0f;
@@ -102,6 +102,9 @@ namespace TeamUtilityEditor.IO
 		
 		private void OnEnable()
 		{
+			_joystickOptions = EditorToolbox.GenerateJoystickNames();
+			_axisOptions = EditorToolbox.GenerateJoystickAxisNames();
+
 			EditorToolbox.ShowStartupWarning();
 			IsOpen = true;
 
@@ -955,14 +958,21 @@ namespace TeamUtilityEditor.IO
 			axisConfig.axis = EditorGUILayout.Popup("Axis", axisConfig.axis, _axisOptions);
 			axisConfig.joystick = EditorGUILayout.Popup("Joystick", axisConfig.joystick, _joystickOptions);
 
-			if(EditorApplication.isPlaying)
+			EditorGUILayout.Space();
+
+			if(axisConfig.type == InputType.Button && (Event.current == null || Event.current.type != EventType.KeyUp))
 			{
-				EditorGUILayout.Space();
-				GUI.enabled = false;
-				EditorGUILayout.FloatField("Raw Axis", axisConfig.GetAxisRaw());
-				EditorGUILayout.FloatField("Axis", axisConfig.GetAxis());
-				EditorGUILayout.Toggle("Button", axisConfig.GetButton());
-				GUI.enabled = true;
+				if(IsGenericJoystickButton(axisConfig.positive))
+					DisplayGenericJoystickButtonWarning(axisConfig.positive, axisConfig.joystick);
+
+				if(IsGenericJoystickButton(axisConfig.altPositive))
+					DisplayGenericJoystickButtonWarning(axisConfig.altPositive, axisConfig.joystick);
+
+				if(IsGenericJoystickButton(axisConfig.negative))
+					DisplayGenericJoystickButtonWarning(axisConfig.negative, axisConfig.joystick);
+
+				if(IsGenericJoystickButton(axisConfig.altNegative))
+					DisplayGenericJoystickButtonWarning(axisConfig.altNegative, axisConfig.joystick);
 			}
 
 			GUILayout.EndScrollView();
@@ -983,6 +993,26 @@ namespace TeamUtilityEditor.IO
 					_keyString = key.ToString();
 				}
 				isEditing = false;
+			}
+		}
+
+		private bool IsGenericJoystickButton(KeyCode keyCode)
+		{
+			return (int)keyCode >= (int)KeyCode.JoystickButton0 && (int)keyCode <= (int)KeyCode.JoystickButton19;
+		}
+
+		private void DisplayGenericJoystickButtonWarning(KeyCode button, int joystick)
+		{
+			if(joystick < 8)
+			{
+				KeyCode correctButton = (KeyCode)((int)KeyCode.Joystick1Button0 + joystick * 20 + ((int)button - (int)KeyCode.JoystickButton0));
+				string warning = string.Format("'{0}' will receive input from all joysticks. Use '{1}' to receive input only from 'Joystick {2}'.", button, correctButton, joystick + 1);
+				EditorGUILayout.HelpBox(warning, MessageType.Warning);
+			}
+			else
+			{
+				string warning = string.Format("'{0}' will receive input from all joysticks.", button);
+				EditorGUILayout.HelpBox(warning, MessageType.Warning);
 			}
 		}
 		#endregion
